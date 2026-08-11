@@ -1,0 +1,27 @@
+[project]
+name = "netcopilot"
+version = "0.1.0"
+description = "LLM-powered network operations agent for SDN (os-ken + Mininet)"
+requires-python = ">=3.11"
+dependencies = [
+    "os-ken>=4.2.1",
+    "flask>=3.0",
+    "pydantic>=2.0",
+    "requests>=2.31",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: requires the lab container (deselect with -m 'not integration')",
+]

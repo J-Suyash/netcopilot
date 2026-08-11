@@ -1,0 +1,32 @@
+# secrets — never commit
+.env
+
+# python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# runtime artifacts
+*.jsonl
+audit/
+
+# editors / tools
+.idea/
+.vscode/
+.mcp.json
+.ripgreprc
+
+# stray shell dotfiles that ended up in the repo root on the dev clone (N25)
+.bashrc
+.zshrc
+.gitconfig
+.bash_profile
+.profile
+.zprofile
+.claude/
