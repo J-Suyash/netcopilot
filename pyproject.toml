@@ -2,7 +2,10 @@
 name = "netcopilot"
 version = "0.1.0"
 description = "LLM-powered network operations agent for SDN (os-ken + Mininet)"
-requires-python = ">=3.11"
+# C12: floor is 3.10, not 3.11 — the lab container (ubuntu:22.04) ships
+# Python 3.10 and that is where manage.py/app.py actually run. os-ken itself
+# only requires >=3.10; the host uv venv (3.11) still satisfies this.
+requires-python = ">=3.10"
 dependencies = [
     "os-ken>=4.2.1",
     "flask>=3.0",
@@ -18,7 +21,7 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py310"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

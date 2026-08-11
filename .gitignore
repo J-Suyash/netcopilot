@@ -16,9 +16,11 @@ build/
 *.jsonl
 audit/
 
-# editors / tools
+# editors / tools  (slash-less too: these are files on some clones, C19)
 .idea/
+.idea
 .vscode/
+.vscode
 .mcp.json
 .ripgreprc
 

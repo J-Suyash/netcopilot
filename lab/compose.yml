@@ -1,0 +1,27 @@
+# NetCopilot lab container: Mininet + os-ken controller + Lab Runner, all inside.
+#
+# Publishes ONLY to host loopback (C13 / PLAN A.4 N12). A bare "5100:5100"
+# binds every host interface and would put a privileged command-exec endpoint
+# on the LAN — the 127.0.0.1 prefix is the security-relevant part, not a style
+# choice. Switch -> controller stays container-internal on 127.0.0.1:6653, so
+# 6653 is deliberately NOT published.
+#
+#   docker compose -f lab/compose.yml up -d
+#   docker compose -f lab/compose.yml exec lab scripts/spike_controller.sh
+services:
+  lab:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    privileged: true # Mininet needs netns/netlink; see the honesty note in PLAN A.4
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "127.0.0.1:8081:8081" # controller REST surface
+      - "127.0.0.1:5100:5100" # Lab Runner (Phase 1)
+    volumes:
+      - ..:/workspace # repo mounted rw; code is edited on the host
+    working_dir: /workspace
+    # Long-lived shell: the launcher and Mininet are started explicitly
+    # (scripts/spike_controller.sh in Gate 1, run_lab.sh from Phase 1).
+    command: sleep infinity
