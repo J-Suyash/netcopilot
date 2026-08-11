@@ -25,7 +25,7 @@
 
 ### A.3 Current state
 - `proposal.md`, `PLAN.md`, `REVIEW.md` committed and pushed.
-- **Gate-1 artifacts committed** (2026-08-12): `.gitignore`, `pyproject.toml`, `netcopilot/controller/manage.py`, `netcopilot/controller/app.py` (minimal REST surface), `scripts/spike_controller.sh`, `lab/Dockerfile` (minimal). Import-checked in a uv 3.11 venv; **not yet run against a live switch** — that is exactly what Gate 1 proves.
+- **Gate-1 artifacts committed** (2026-08-12): `.gitignore`, `pyproject.toml`, `netcopilot/controller/manage.py`, `netcopilot/controller/app.py` (minimal REST surface), `scripts/spike_controller.sh`, `lab/Dockerfile` (minimal). **Launcher boot-tested on 2026-08-12** (no switch): `/health` + `/switches` serve, OF listener on 6653 confirmed open, process stays alive — three real bugs caught and fixed by the boot test (hub.eventlet absent under native hub → werkzeug make_server; hub.semaphore → hub.Semaphore; missing `__init__.py` → namespace-package Flask crash). **Switch handshake + cookie round-trip still pending** — that is exactly what Gate 1 proves in the lab container.
 
 ### A.4 Environment (DECIDED; container basics verified 2026-08-12)
 | Thing | Value |
@@ -97,8 +97,9 @@ HOST (uv venv, no root)
 │  │   os_ken.app.ofctl.api — imported at module top      │ │
 │  │   level (N24); baseline L2 flows cookie=0 prio<100;  │ │
 │  │   flow-table-full surfacing)                         │ │
-│  │ REST: Flask via hub.spawn(eventlet.wsgi.server,      │ │
-│  │   listen(0.0.0.0:8081)) — 5 endpoints                │ │
+│  │ REST: Flask via werkzeug make_server + │ │
+│  │   hub.spawn (0.0.0.0:8081, native hub, │ │
+│  │   N15-amended) — 5 endpoints           │ │
 │  └───────────────┬─────────────────────────────────────┘ │
 │                  │ OpenFlow 1.3 — 127.0.0.1:6653 (internal)│
 │  ┌───────────────▼─────────────────────────────────────┐ │
@@ -153,7 +154,7 @@ AppManager.run_apps([
     'netcopilot.controller.app',
 ])
 ```
-   Plus: in `app.start()` → `hub.spawn(hub.eventlet.wsgi.server, hub.eventlet.listen(('0.0.0.0', REST_PORT)), flask_app)`. **Preflight:** if port 6653 is already bound (stale process), exit with a clear error.
+   Plus: in `app.start()` → `srv = make_server("0.0.0.0", REST_PORT, flask_app, threaded=True); hub.spawn(srv.serve_forever)`. **Empirical revision of N15 (2026-08-12 boot test):** os-ken defaults to the NATIVE hub (`OSKEN_HUB_TYPE` unset) and `hub.eventlet` does NOT exist under it — the original `eventlet.wsgi.server` recipe raised AttributeError at runtime. Werkzeug's `make_server` in a spawned native thread needs no eventlet, no monkey-patching, and works under either hub type. **Preflight:** if port 6653 is already bound (stale process), exit with a clear error.
 8. **Deterministic testing via MockLLM** — no network or API keys in unit/CI tests.
 9. **Dry-run default ON** — destructive ops require confirmation when off.
 10. **No timeouts on agent flows, period (N19+N27)** — the schema has no timeout fields; removal is explicit (`remove_flow`) → audit event.
@@ -338,7 +339,7 @@ QUESTIONS FOR THE AUTHOR (anything you could not determine)
 ### v1 → v2 → v3 (all accepted; dispositions superseded by later fixes)
 - v1: Ryu→os-ken (BLOCKER), cookie identity, Runner injection, bounded conflicts, port config, lock, protocol-matched verify, spike day 1, env decision.
 - v2: os-ken packaging gap → Option A (BLOCKER), cookie_mask discipline, op-id reseed, launcher gap, idle_timeout+drop, pre/post probe, QoS metric, Gate 0 retarget, honest container framing, lean on topology module, eventlet compat retired.
-- v3: wiring (N12), `ofp_handler` required (N13), oslo.config order (N14), eventlet WSGI (N15), ofctl read path (N16), 6653 default (N17), mark_dscp action (N18), timeouts on drops (N19), session cookie bits (N20).
+- v3: wiring (N12), `ofp_handler` required (N13), oslo.config order (N14), eventlet WSGI (N15 — **empirically amended 2026-08-12: native hub → werkzeug make_server**), ofctl read path (N16), 6653 default (N17), mark_dscp action (N18), timeouts on drops (N19), session cookie bits (N20).
 
 ### Review v4 (external agent, os-ken source-verified): GO / APPROVE WITH CHANGES — all 9 findings ACCEPTED into v5:
 

@@ -54,6 +54,8 @@ History of external technical reviews of `PLAN.md`. Each review was performed by
 
 **Reviewer's note (adopted in v5):** "This is the last review that will earn its keep... Fix N21–N25 in the text, then go write manage.py." Plan text frozen unless a spike fails; future reviews review code.
 
+**Empirical addendum (2026-08-12, author boot test — no switch needed):** running the launcher for real caught three bugs no paper review did: (1) `hub.eventlet` does not exist under the default NATIVE hub (`OSKEN_HUB_TYPE` unset) — N15's `eventlet.wsgi.server` recipe raised AttributeError at runtime; fixed with werkzeug `make_server` + `hub.spawn(srv.serve_forever)`; (2) `hub.semaphore()` → `hub.Semaphore()` (native hub API); (3) missing `netcopilot/__init__.py` + `controller/__init__.py` made Flask's `get_root_path` crash on the namespace package. After fixes: `/health` → `{"status":"ok","switches":0}`, `/switches` → `{"dpids":[]}`, OF listener confirmed on 0.0.0.0:6653, process stays alive (N13 guard holds). This validates the reviewer's claim that launcher correctness is provable WITHOUT Mininet; switch handshake + cookie round-trip remain for Gate 1 in the lab container.
+
 ---
 
 *Append future reviews here (reviewer: date, plan version, verdict, findings, evidence).*

@@ -4,13 +4,16 @@ Boots the os-ken app stack for the NetCopilot SDN controller.
 Run inside the lab container:  python -m netcopilot.controller.manage
 
 Ordering is load-bearing (review N13/N14):
-  1. hub.patch(thread=False) MUST run before anything imports socket.
-  2. The opt-registering modules MUST be imported BEFORE cfg.CONF([...])
+  1. The opt-registering modules MUST be imported BEFORE cfg.CONF([...])
      (ofp-* opts live in os_ken.controller.controller, --observe-links in
      os_ken.topology.switches — NOT in os_ken.flags).
-  3. 'os_ken.controller.ofp_handler' MUST be in the app list: its start()
+  2. 'os_ken.controller.ofp_handler' MUST be in the app list: its start()
      returns the only long-lived thread; without it run_apps joins an empty
      set and the process exits silently with rc 0.
+
+Hub note (empirical): os-ken defaults to the NATIVE hub (OSKEN_HUB_TYPE
+unset). hub.patch(thread=False) below is harmless under native (no-op
+monkey patch) and only matters if eventlet mode is enabled later.
 """
 
 import socket
@@ -18,7 +21,7 @@ import sys
 
 from os_ken.lib import hub
 
-hub.patch(thread=False)
+hub.patch(thread=False)  # no-op under native hub; required if OSKEN_HUB_TYPE=eventlet
 
 from os_ken import cfg, flags  # noqa: F401,E402
 from os_ken.base.app_manager import AppManager  # noqa: E402

@@ -17,6 +17,7 @@ import logging
 import os
 
 from flask import Flask, jsonify, request
+from werkzeug.serving import make_server
 
 from os_ken.app.ofctl import api as ofctl_api  # noqa: F401  (N24: top-level)
 from os_ken.base import app_manager
@@ -43,19 +44,21 @@ class NetCopilotApp(app_manager.OSKenApp):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.datapaths = {}
-        self._cookie_lock = hub.semaphore()
+        self._cookie_lock = hub.Semaphore()  # class, not function (native hub)
         self._op_counter = 0
         self.flask_app = Flask("netcopilot")
         self._register_routes()
 
     def start(self):
         super().start()
-        # N15: never flask_app.run() inside the eventlet-patched process.
-        hub.spawn(
-            hub.eventlet.wsgi.server,
-            hub.eventlet.listen(("0.0.0.0", REST_PORT)),
-            self.flask_app,
-        )
+        # N15 (revised after empirical check): os-ken defaults to the NATIVE hub
+        # (OSKEN_HUB_TYPE unset) — hub.eventlet does NOT exist under it, so the
+        # original eventlet.wsgi.server recipe would AttributeError at runtime.
+        # Serve Flask via werkzeug in a spawned native thread instead: no eventlet,
+        # no monkey-patching, safe under either hub type. flask_app.run() would
+        # block this thread forever — make_server().serve_forever() is the pattern.
+        srv = make_server("0.0.0.0", REST_PORT, self.flask_app, threaded=True)
+        hub.spawn(srv.serve_forever)
         # N13: return None — ofp_handler's spawned OpenFlowController is the
         # only long-lived thread handed to run_apps; keep this app threadless.
         return None
