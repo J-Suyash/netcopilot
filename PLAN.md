@@ -1,4 +1,4 @@
-# NetCopilot — Implementation Plan & Review Brief (v5.1)
+# NetCopilot — Implementation Plan & Review Brief (v5.2)
 
 **Project:** LLM-Powered Network Operations Agent for Software-Defined Networks
 **Repo:** https://github.com/J-Suyash/netcopilot
@@ -8,6 +8,8 @@
 > **v5 changes (from technical review v4):** Runner command execution switched to **`h.popen([...])`** — `h.cmd()` always routes through the node's bash, so "list-arg exec" was false comfort (N21); module attribution fixed: topology ← `os_ken.topology.api`, flow stats ← `os_ken.app.ofctl.api` (N22); `mark_dscp` requires a resolved `out_port` — bare SetField blackholes traffic (N23); `os_ken.app.ofctl.service` imported top-level AND named in `run_apps` (N24); **`.gitignore` created now**, before `.env` exists (N25); Phase 0 = days 1–3 (N26); **no agent flow ever carries a timeout** — schema drops the fields entirely (N27); session id = `max(session)+1` from audit tail (N28); os-ken import confinement to `controller/` (N29). Gate-1 artifacts (`.gitignore`, `pyproject.toml`, `manage.py`, `app.py`, `spike_controller.sh`, `lab/Dockerfile`) exist and are import-checked but **not yet tested against a live switch** — the spike proves them.
 
 > **v5.1 (code review of the Gate-1 artifacts, 2026-08-12):** three defects that would have made the spike fail *and misreport why* are fixed in code — dispatcher constants imported from `os_ken.controller.handler` (C1), `reply_cls` = parser message class (C2), `reply_multi` returns a list (C3). The delete-namespace invariant is now enforced code, not a comment (C4). Plus: `EventOFPStateChange` on both dispatchers (C5), barrier-backed error surfacing (C6), spike no longer hardcodes a cookie and exercises the all-agent mask (C7/C8), launcher parses CONF inside `main()` and preflights both ports (C9/C10), REST server shuts down cleanly (C11), Python floor 3.10 to match the container (C12), `lab/compose.yml` pins publishes to host loopback (C13), REST-layer and namespace-guard tests added (C14/C15). See Part G.
+
+> **v5.2 (Gates 0 and 1 executed, 2026-08-12):** both **CLOSED**. Lab image builds; OVS starts inside the privileged container and Mininet runs on the kernel datapath *and* `datapath=user`; `scripts/spike_controller.sh` passes **11/11 on both**, proving launcher → handshake → cookie'd install → readback → all-agent-mask delete → namespace refusal against a live switch. Unit suite 27 passed. Two findings from running it (C20 missing `iproute2`, C21 `mn` stdin EOF killing the topology mid-spike) fixed. Phase 0 is done; Phase 1 is next.
 
 ---
 
@@ -28,14 +30,15 @@
 ### A.3 Current state
 - `proposal.md`, `PLAN.md`, `REVIEW.md` committed and pushed.
 - **Gate-1 artifacts committed** (2026-08-12): `.gitignore`, `pyproject.toml`, `netcopilot/controller/manage.py`, `netcopilot/controller/app.py` (minimal REST surface), `scripts/spike_controller.sh`, `lab/Dockerfile` (minimal). **Launcher boot-tested on 2026-08-12** (no switch): `/health` + `/switches` serve, OF listener on 6653 confirmed open, process stays alive — three real bugs caught and fixed by the boot test (hub.eventlet absent under native hub → werkzeug make_server; hub.semaphore → hub.Semaphore; missing `__init__.py` → namespace-package Flask crash). **Switch handshake + cookie round-trip still pending** — that is exactly what Gate 1 proves in the lab container.
-- **Code review of those artifacts (2026-08-12)** found 3 spike-blocking defects (dispatcher import, `reply_cls` class kind, `reply_multi` list) and 16 more; all fixed, `lab/compose.yml` added, unit suite extended to the REST layer and the delete-namespace guard. Every OpenFlow-touching line is still unexecuted — Gate 1 is the first real proof.
+- **Code review of those artifacts (2026-08-12)** found 3 spike-blocking defects (dispatcher import, `reply_cls` class kind, `reply_multi` list) and 16 more; all fixed, `lab/compose.yml` added, unit suite extended to the REST layer and the delete-namespace guard.
+- **Gates 0 and 1 CLOSED (2026-08-12).** Unit suite **27 passed**; lab image builds; OVS runs inside the privileged container on kernel *and* userspace datapaths; `scripts/spike_controller.sh` → **11 passed, 0 failed** on both. The core controller path — launcher → handshake → cookie'd flow install → readback → masked delete → namespace refusal — is now proven against a live switch, not just reasoned from source. Next: Phase 1 (`lab/topo.py`, `lab/runner.py`, host tracking, `client.py`).
 
 ### A.4 Environment (DECIDED; container basics verified 2026-08-12)
 | Thing | Value |
 |---|---|
 | Dev box | CachyOS/Arch, host Python 3.14, host sudo blocked — irrelevant: **rootful Docker 29.7.2 + docker group verified** |
 | Container capability | Verified: `--privileged` netlink ops OK; namespaces present |
-| OVS | Host module present; **OVS *inside* the container = the one untested lab piece** (Gate 0) |
+| OVS | Host module present; **OVS *inside* the container: VERIFIED 2026-08-12** — `ovs-ctl --system-id=random start` brings up ovsdb-server + ovs-vswitchd in the privileged container, and Mininet runs on **both** the kernel datapath (`--switch ovs`) and the userspace one (`--switch ovs,datapath=user`). Gate 0 closed. |
 | Python toolchain | uv everywhere; `uv python install 3.11` verified rootless |
 | Controller | **os-ken 4.2.1** — source-verified: `AppManager.run_apps` usable; `ofp_handler` REQUIRED (its `start()` returns the only long-lived thread — omit it and the process **exits silently, rc 0**); opts registered in `controller.py`/`topology/switches.py`, NOT `flags.py`; `OFP_TCP_PORT=6653` default; `--observe-links` default False; `mod_flow_entry` default `cookie_mask=0` (mask-0 = match-everything trap) |
 | LLM access | OpenRouter + OpenCode Zen (OpenAI-compatible), keys in `.env`; Ollama fallback |
@@ -214,7 +217,11 @@ sdn_ai_copilot/
 ## Part C — Implementation Plan
 
 ### Phase 0 — Environment bootstrap (days 1–3)
-**Gate 0 (day 1):** OVS-in-container vs `--switch user` (container basics already verified). Build lab image (`lab/Dockerfile` exists); test `ovsdb-server`+`ovs-vswitchd` in-container; same gate tests `mn --topo linear,2 --switch user`. Either green = lab green. Also on day 1: confirm `.gitignore` covers `.env` (it does — created with the artifacts; **verify on your local clone**, where stray shell dotfiles were observed untracked).
+**Gate 0 (day 1) — CLOSED 2026-08-12.** Result: image builds; `ovs-ctl --system-id=random start` brings OVS up inside the privileged container (no systemd); Mininet runs on the kernel datapath *and* on `datapath=user`. Two image gaps found and fixed: `iproute2` is not pulled in by the `mininet` package (without `ip`, mn aborts with `/bin/sh: 1: ip: not found`), and `ethtool`/`psmisc`/`procps` are the same class of implicit dependency. `.gitignore` covers `.env` — confirmed on the local clone.
+
+**Gate 1 (day 1–2) — CLOSED 2026-08-12: `scripts/spike_controller.sh` → 11 passed, 0 failed**, on both `MN_SWITCH=ovs` and `MN_SWITCH=ovs,datapath=user`. Proven end to end: launcher boots with the OF listener open (N13); switch handshake and dpid tracking; `POST /flows` allocates `0xa51d000100000001` (magic|session|op) and the barrier confirms the switch accepted it (C6); `GET /flows` reads the cookie back intact with structured match/actions; an all-agent-mask delete removes the agent flow while the cookie-0 baseline (the LLDP flow that `--observe-links` installs) survives; a `cookie_mask=0` wipe is refused with 403 (C4). One harness bug found: `mn`'s CLI reads stdin, so with no tty it takes EOF as "exit" and tore the topology down mid-spike — the later steps then failed with `InvalidDatapath`. Fixed with a `sleep "$MN_TTL" | mn ...` pipe.
+
+**Original gate text (kept for provenance):** OVS-in-container vs `--switch user`; build lab image; test `ovsdb-server`+`ovs-vswitchd` in-container.
 
 **Gate 1 (day 1–2, launcher-first — independent of Gate 0):**
 1. Host venv: `uv venv --python 3.11` + `uv pip install -e .` (pyproject exists).
@@ -282,7 +289,7 @@ Key tests: guardrail table-driven (≥15, incl. prompt-injection intents); confl
 
 | # | Risk | Likelihood | Mitigation |
 |---|---|---|---|
-| E.1 | OVS *inside* lab container doesn't run | Medium | Gate 0 day 1; `--switch user` fallback (bounded); `--network host` contingency only if both fail |
+| E.1 | OVS *inside* lab container doesn't run | **Retired 2026-08-12** | Verified in the built image: kernel datapath AND `datapath=user` both run Mininet; full Gate-1 spike passes 11/11 on either. `--network host` contingency no longer needed |
 | E.2 | Launcher/wiring silent failures | Retired by design | Source-verified recipe; launcher smoke test; Gate 1 day 1–2 |
 | E.3 | Small/free LLMs unreliable at tool-calling | Medium | Bounded retries + validation feedback; structured JSON fallback; cheap paid backup |
 | E.4 | Scope creep (UI polish, PNG, queues, conflict solver, O5) | High | Non-goals (A.5); gated phases; PNG cuttable |
@@ -387,5 +394,13 @@ QUESTIONS FOR THE AUTHOR (anything you could not determine)
 | C19 | NIT | `.gitignore` used `.idea/`/`.vscode/` (directory-only patterns) while the clone has them as files | Slash-less variants added; `.gitmodules` left tracked-or-deleted as an author decision |
 
 **Still unverified by any test:** every OpenFlow-touching path. C1–C3 and C6 are reasoned from the os-ken source, not executed — Gate 1 in the lab container is the first real proof.
+
+**Update after running the gates (2026-08-12):** they are executed now. Unit suite 27 passed; Gate 0 and Gate 1 both closed (11/11 on kernel and userspace datapaths). Two further findings came out of *running* it, fixed in the same pass:
+
+| ID | Severity | Finding | Disposition |
+|---|---|---|---|
+| C20 | MAJOR | `lab/Dockerfile` omitted `iproute2` — the `mininet` package does not depend on it, so `mn` aborted with `/bin/sh: 1: ip: not found` before creating a single link. `ethtool`/`psmisc`/`procps` are the same class of implicit dependency | Added to the image; Gate-0 recipe (start OVS by hand, both datapath variants) recorded in the Dockerfile |
+| C21 | MAJOR | Spike harness: `mn`'s CLI reads stdin, so under `docker exec -T`/CI it saw EOF, exited immediately and tore the topology down — steps 5–7 then failed with `InvalidDatapath: Datapath Invalid 1`, which reads like an app bug and is not one | `sleep "$MN_TTL" \| mn ...` holds the topology up; spike also starts OVS itself if ovsdb is not reachable; `InvalidDatapath` now maps to a 404 "switch is gone or reconnected" instead of a generic 500 |
+
 
 *End of plan. Reviewer: see Part F. Author: reply to every finding with accept/fix/reject-reason before implementation starts.*

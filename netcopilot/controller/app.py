@@ -24,6 +24,7 @@ import os
 
 from flask import Flask, jsonify, request
 from os_ken.app.ofctl import api as ofctl_api
+from os_ken.app.ofctl import exception as ofctl_exc
 from os_ken.base import app_manager
 from os_ken.controller import ofp_event
 from os_ken.controller.handler import DEAD_DISPATCHER, MAIN_DISPATCHER, set_ev_cls
@@ -195,6 +196,8 @@ class NetCopilotApp(app_manager.OSKenApp):
                 reply_cls=parser.OFPFlowStatsReply,
                 reply_multi=True,
             )
+        except ofctl_exc.InvalidDatapath:
+            return self._error(f"switch {dp.id} is gone or reconnected; retry", 404)
         except Exception as exc:  # noqa: BLE001 — HTTP boundary: surface any
             # ofctl failure (timeout, service missing per N24) as a 500.
             return self._error(f"stats request failed: {exc}", 500)
@@ -239,6 +242,10 @@ class NetCopilotApp(app_manager.OSKenApp):
                     reply_cls=dp.ofproto_parser.OFPBarrierReply,
                 )
                 switch_error = self._last_error
+        except ofctl_exc.InvalidDatapath:
+            # The ofctl service rejects unknown *and* stale datapath objects
+            # (switch reconnected between our map update and this write).
+            return self._error(f"switch {dp.id} is gone or reconnected; retry", 404)
         except Exception as exc:
             LOG.exception("flow add failed")
             return self._error(f"flow add failed: {exc}", 500)

@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 
 CTRL_LOG=/tmp/netcopilot_ctrl.log
 REST=http://127.0.0.1:8081
+MN_TTL="${MN_TTL:-120}" # seconds the topology is held up
 PASS=0
 FAIL=0
 
@@ -17,9 +18,22 @@ bad() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 cleanup() {
   [ -n "${CTRL_PID:-}" ] && kill "$CTRL_PID" 2>/dev/null
   [ -n "${MN_PID:-}" ] && kill "$MN_PID" 2>/dev/null
+  pkill -f 'mn --topo' 2>/dev/null
   mn -c >/dev/null 2>&1
 }
 trap cleanup EXIT
+
+say "0. OVS daemons (no systemd in the container, so start them by hand)"
+if ovs-vsctl show >/dev/null 2>&1; then
+  ok "ovsdb already reachable"
+elif /usr/share/openvswitch/scripts/ovs-ctl --system-id=random start >/dev/null 2>&1 &&
+  ovs-vsctl show >/dev/null 2>&1; then
+  ok "ovsdb + ovs-vswitchd started"
+else
+  bad "cannot start OVS — try MN_SWITCH='ovs,datapath=user'"
+  exit 1
+fi
+mn -c >/dev/null 2>&1
 
 say "1. preflight: port 6653 must be free"
 if ss -ltn | grep -q ':6653 '; then
@@ -56,15 +70,17 @@ fi
 say "4. bring up a switch with 2 host ports (MN_SWITCH=ovs|user; default ovs)"
 # C8: single,2 — a single,1 switch has no port 2, so the baseline flow in
 # step 7 would be rejected and the mask check would report a false "mask bug".
+# The `sleep | mn` pipe is load-bearing: mn's CLI reads stdin, and with no tty
+# (docker exec -T, CI) it takes EOF as "exit", tears the topology down at once
+# and the later steps then fail with "Datapath Invalid" — observed 2026-08-12.
 SWITCH="${MN_SWITCH:-ovs}"
-timeout 90 mn --topo single,2 \
+sleep "$MN_TTL" | timeout "$((MN_TTL + 10))" mn --topo single,2 \
   --controller=remote,ip=127.0.0.1,port=6653 \
   --switch "$SWITCH",protocols=OpenFlow13 >/tmp/mn.log 2>&1 &
 MN_PID=$!
-sleep 6
 DPIDS=""
-for _ in $(seq 1 20); do
-  DPIDS=$(curl -sf "$REST/switches" 2>/dev/null | tr -d '[]" \n')
+for _ in $(seq 1 30); do
+  DPIDS=$(curl -sf "$REST/switches" 2>/dev/null | sed -n 's/.*\[\(.*\)\].*/\1/p')
   [ -n "$DPIDS" ] && break
   sleep 0.5
 done
