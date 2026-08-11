@@ -23,10 +23,10 @@ from os_ken.lib import hub
 
 hub.patch(thread=False)  # no-op under native hub; required if OSKEN_HUB_TYPE=eventlet
 
-from os_ken import cfg, flags  # noqa: F401,E402
-from os_ken.base.app_manager import AppManager  # noqa: E402
-from os_ken.controller import controller  # noqa: F401,E402  (registers ofp-* opts)
-from os_ken.topology import switches  # noqa: F401,E402  (registers --observe-links)
+from os_ken import cfg, flags  # noqa: F401
+from os_ken.base.app_manager import AppManager
+from os_ken.controller import controller  # noqa: F401  (registers ofp-* opts)
+from os_ken.topology import switches  # noqa: F401  (registers --observe-links)
 
 CONF = cfg.CONF
 

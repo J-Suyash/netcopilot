@@ -17,15 +17,13 @@ import logging
 import os
 
 from flask import Flask, jsonify, request
-from werkzeug.serving import make_server
-
-from os_ken.app.ofctl import api as ofctl_api  # noqa: F401  (N24: top-level)
+from os_ken.app.ofctl import api as ofctl_api
 from os_ken.base import app_manager
 from os_ken.controller import controller as os_ken_controller
 from os_ken.controller import ofp_event
 from os_ken.controller.handler import MAIN_DISPATCHER, set_ev_cls
-from os_ken.lib import hub
-from os_ken.lib import ofctl_v1_3
+from os_ken.lib import hub, ofctl_v1_3
+from werkzeug.serving import make_server
 
 LOG = logging.getLogger(__name__)
 
@@ -61,7 +59,6 @@ class NetCopilotApp(app_manager.OSKenApp):
         hub.spawn(srv.serve_forever)
         # N13: return None — ofp_handler's spawned OpenFlowController is the
         # only long-lived thread handed to run_apps; keep this app threadless.
-        return None
 
     # ------------------------------------------------------------------ #
     # OpenFlow events
@@ -157,7 +154,8 @@ class NetCopilotApp(app_manager.OSKenApp):
                 reply_cls=ofp_event.EventOFPFlowStatsReply,
                 reply_multi=True,
             )
-        except Exception as exc:  # timeout / ofctl service missing (N24)
+        except Exception as exc:  # noqa: BLE001 — HTTP boundary: surface any
+            # ofctl failure (timeout, service missing per N24) as a 500.
             return self._error(f"stats request failed: {exc}", 500)
         out = []
         for stat in reply.body:

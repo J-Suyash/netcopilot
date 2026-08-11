@@ -8,6 +8,7 @@ import socket
 
 import pytest
 
+from netcopilot.controller import manage
 from netcopilot.controller.app import (
     FULL_MASK,
     MAGIC,
@@ -15,7 +16,6 @@ from netcopilot.controller.app import (
     SESSION_MASK,
     NetCopilotApp,
 )
-from netcopilot.controller import manage
 
 
 @pytest.fixture()
