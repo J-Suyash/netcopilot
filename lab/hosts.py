@@ -6,27 +6,39 @@ Lab Runner, the controller, and unit tests without root or a lab container.
 
 Stability contract: changing a name or IP breaks the LLM vocabulary and any
 installed flows / audit records that reference them. Change only with intent.
+The mappings are immutable (MappingProxyType): silent mutation is a TypeError.
 """
 
+from collections.abc import Mapping
 from ipaddress import IPv4Network, ip_address
+from types import MappingProxyType
 
 SUBNET = "10.0.0.0/24"
 _NETWORK = IPv4Network(SUBNET)
 
-# name -> IP. Ordering is stable (sorted) for deterministic MAC assignment.
-HOSTS: dict[str, str] = {
-    "web": "10.0.0.10",
-    "db": "10.0.0.20",
-    "client": "10.0.0.5",
-    "dmz": "10.0.0.30",
-}
+# name -> IP.
+HOSTS: Mapping[str, str] = MappingProxyType(
+    {
+        "web": "10.0.0.10",
+        "db": "10.0.0.20",
+        "client": "10.0.0.5",
+        "dmz": "10.0.0.30",
+    }
+)
 
-# Locally-administered unicast MACs, derived deterministically from host order.
-# Stable MACs keep the controller's host tracking deterministic across runs.
-HOST_MACS: dict[str, str] = {
-    name: f"02:00:00:00:00:{index:02x}"
-    for index, name in enumerate(sorted(HOSTS), start=1)
-}
+# Locally-administered unicast MACs derived from the IP's last octet, so a
+# host's MAC is stable under host-set changes: inserting a name that sorts
+# earlier must not renumber existing hosts (that would silently invalidate
+# controller host tracking and prior audit rows).
+HOST_MACS: Mapping[str, str] = MappingProxyType(
+    {
+        name: f"02:00:00:00:00:{int(ip.rsplit('.', 1)[1]):02x}"
+        for name, ip in HOSTS.items()
+    }
+)
+
+# The strict allowlist: exactly the four role names and their four IPs.
+_KNOWN_IPS: frozenset[str] = frozenset(HOSTS.values())
 
 # Switch roles used by lab/topo.py (2 core + 2 access).
 CORE_SWITCHES = 2
@@ -43,21 +55,37 @@ def host_ip(name: str) -> str:
 
 def host_ips() -> set[str]:
     """All host IPs — the allowlist the Runner/guardrails validate against."""
-    return set(HOSTS.values())
+    return set(_KNOWN_IPS)
 
 
 def is_known_host(name_or_ip: str) -> bool:
-    """True if the string is a host role name or one of the host IPs."""
-    if name_or_ip in HOSTS:
-        return True
+    """STRICT allowlist: only the four role names or their four IPs.
+
+    Anything else — including other addresses in the lab subnet — is NOT
+    known. Guardrails and the Runner must use this (PLAN B.3.2: allowlists
+    from resolved topology, never from strings the model produced).
+    """
+    return name_or_ip in HOSTS or name_or_ip in _KNOWN_IPS
+
+
+def is_lab_address(value: str) -> bool:
+    """Loose check: any address inside the lab subnet (not necessarily a host).
+
+    Use only where subnet membership itself is the requirement; the Runner's
+    input validation is the strict `is_known_host`.
+    """
     try:
-        return ip_address(name_or_ip) in _NETWORK
+        return ip_address(value) in _NETWORK
     except ValueError:
         return False
 
 
 def is_valid_ip(value: str) -> bool:
-    """True if the string parses as any IP address (allowlist-free check)."""
+    """Parse check only: any syntactically valid IP address.
+
+    NOT sufficient for the Runner — input validation there must use
+    `is_known_host` (the allowlist is the actual control, PLAN N21).
+    """
     try:
         ip_address(value)
         return True

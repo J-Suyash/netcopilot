@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         iperf3 \
         curl \
         python3-pip \
+        python3-pytest \
     && pip3 install --no-cache-dir os-ken flask \
     && rm -rf /var/lib/apt/lists/*
 

@@ -35,6 +35,12 @@ class TestTopologyStructure:
                 (name in link) for link in topo.links()
             ), f"host {name} has no link"
 
+    def test_redundant_access_link_exists(self, topo):
+        # Deliberate a1-a2 link: the route fail_link/heal_link scenarios
+        # diagnose (PLAN B.4).
+        assert ("a1", "a2") in topo.links()
+
     def test_link_counts(self, topo):
         links = topo.links()
-        assert len(links) == 13  # 1 core-core + 8 access-core + 4 host links
+        # 1 core-core + 4 access-core (2 cores x 2 access) + 1 a1-a2 + 4 host
+        assert len(links) == 10
